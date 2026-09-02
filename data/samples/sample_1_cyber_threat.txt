@@ -1,0 +1,19 @@
+CRITICAL SECURITY ADVISORY: CVE-2026-8891 RANSOMWARE EXPLOIT
+
+Date: September 2, 2026
+Threat Actor: ApexShadow Group
+Target Systems: Enterprise Identity and Access Management (IAM) Gateways
+
+OVERVIEW:
+A critical zero-day remote code execution vulnerability (CVSS Score 9.8) has been discovered in Apex IAM Gateway v4.2 through v5.1. Unauthenticated remote attackers are actively exploiting memory corruption in the TLS handshake handler to inject ransomware payloads into enterprise networks.
+
+IMPACT:
+Over 14,000 corporate identity servers are currently exposed worldwide. Once compromised, attackers achieve complete domain controller administrative privileges within 18 minutes, exfiltrating customer records before encrypting database volumes with AES-256.
+
+AFFECTED ENTITIES:
+Financial institutions, cloud service providers, and healthcare infrastructure running unpatched Apex IAM instances.
+
+RECOMMENDED MITIGATION:
+1. Immediate Action: Isolate port 8443 on external firewalls and apply Emergency Patch v5.1.4 released today.
+2. Threat Hunting: Inspect reverse proxy logs for anomalous POST requests containing binary strings in the Authorization header.
+3. Long-term: Implement zero-trust certificate pinning across all edge routers and enforce hardware MFA keys.
