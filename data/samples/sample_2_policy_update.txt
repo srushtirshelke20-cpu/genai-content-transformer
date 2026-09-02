@@ -1,0 +1,16 @@
+GLOBAL ENTERPRISE DIRECTIVE: WORKPLACE GENERATIVE AI GOVERNANCE POLICY
+
+Effective Date: October 1, 2026
+Audience: All Global Full-Time Employees and Contractors
+
+BACKGROUND:
+As artificial intelligence tools become embedded in daily workflows, our organization must balance productivity acceleration with the legal imperative to protect client confidential data, proprietary source code, and intellectual property.
+
+KEY POLICY MANDATES:
+1. Approved Tooling: Employees may only use enterprise-licensed AI platforms with data isolation agreements. Public, consumer-tier LLM subscriptions are strictly forbidden for corporate work.
+2. Prohibited Data Uploads: Under no circumstances should source code, internal financial balances, customer PII, or unreleased product designs be pasted into external AI interfaces.
+3. Code & Content Verification: Any AI-generated code, legal drafts, or client communications must undergo human peer review before deployment or publication.
+4. Accountability: The human author remains 100% legally and professionally responsible for any hallucinations, copyright infringements, or inaccuracies produced by AI tools.
+
+COMPLIANCE & AUDITING:
+Automated DLP (Data Loss Prevention) sensors will monitor outgoing network traffic. Failure to comply will result in disciplinary action up to immediate contract termination.
