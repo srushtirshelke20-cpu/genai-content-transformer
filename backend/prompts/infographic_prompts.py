@@ -1,103 +1,104 @@
-
----
-
-### 4. `prompts/infographic_prompts.py`
-**Deliverable:** 📊 **Infographic Blueprint**  
-**Key Features:** Hero statistic callout banner, 3 comparison/pillar columns, designer icon recommendations (FontAwesome), and **executable Mermaid.js flowchart syntax** (`graph LR`/`TD`).
-
-```python
 """
-Infographic Blueprint Prompt Module.
-Generates prompts for structural visual layouts:
-- Hero statistics
-- 3 Comparison / Pillar columns
-- Workflow diagram instructions formatted in valid Mermaid.js flowchart syntax and SVG
-- Key metric callout badges
-- Icon suggestions for human graphic designers
+Infographic Plan Prompts Module.
+Generates InfographicPlan artefacts with hero statistics, layout architecture,
+and sectional breakdowns with visual icon recommendations.
+Strictly validates against backend.schemas.InfographicPlan.
 """
 
-from typing import Optional, Dict, Any
-from .base_prompt import BasePromptBuilder, TransformationParameters
+from typing import Dict, Any, Optional
+from backend.schemas import InfographicPlan
+from .base_prompt import call_ollama_json
 
 
-class InfographicPromptBuilder:
-    """Builder for Infographic Blueprint Prompts."""
+INFOGRAPHIC_SYSTEM_PROMPT = """You are an information architect and visual infographics designer.
+Transform the provided source content into an Infographic Plan and blueprint.
+Tone: {tone}
+Target Audience: {target_audience}
+Objective: {objective}
+Detail Level: {detail_level}
 
-    TASK_DESCRIPTION = """You are tasked with transforming the provided source content into an Infographic Blueprint & Visual Wireframe.
+CRITICAL RULES:
+1. main_title: Captivating, bold infographic headline.
+2. hero_statistic: The single most impactful statistic or metric callout (e.g. "14,000 EXPOSED" or "18 MINS").
+3. layout_style: Must specify structural layout (e.g., "3-Column Comparison", "Sequential Threat Timeline", or "Perimeter Defense Hierarchy").
+4. sections: An ordered list of 3 to 5 InfographicItem objects:
+   - stat_or_icon: A key micro-metric, percentage, or FontAwesome/Lucide icon string (e.g., "fa-shield-halved", "9.8 CVSS", "Port 8443").
+   - heading: Section or pillar title.
+   - description: 1-2 concise descriptive sentences.
+5. color_palette_recommendation: List of 3 to 5 HEX color codes with brief descriptive names (e.g. ["#EF4444 (Critical Red)", "#1E293B (Dark Slate)", "#3B82F6 (Action Blue)"]).
 
-This blueprint serves dual purposes:
-1. It provides a visual design blueprint for UI graphic designers.
-2. It generates valid, executable diagram code (Mermaid.js flowchart / SVG) that can be automatically rendered inline in web browsers.
+You MUST respond strictly with a valid JSON object matching this schema:
+{{
+  "main_title": "string",
+  "hero_statistic": "string",
+  "layout_style": "3-Column Comparison",
+  "sections": [
+    {{
+      "stat_or_icon": "string",
+      "heading": "string",
+      "description": "string"
+    }}
+  ],
+  "color_palette_recommendation": ["string"]
+}}"""
 
-Your generation must include the following structural components:
-1. Infographic Header:
-   - Primary Headline & Explanatory Subtitle.
-   - Recommended Visual Color Palette (Primary, Secondary, Accent, Background HEX codes).
-2. Hero Statistic Banner:
-   - The single most jaw-dropping, critical statistic, percentage, or metric from the source content (e.g., '45 MIN' or '68% DROP').
-   - Descriptive sub-label explaining the significance of the hero metric.
-3. Three-Column Pillar Grid (Comparison or Progression):
-   - Column 1: Problem / Threat / Baseline / Legacy State.
-   - Column 2: Mechanism / Architecture / Active Vector.
-   - Column 3: Solution / Remediation / Future State.
-   Each column must include a title, key takeaway, and suggested icon name.
-4. Workflow Diagram in Valid Mermaid.js Syntax (KEY DIFFERENTIATOR):
-   - You MUST write a clean, syntactically valid Mermaid.js flowchart (`graph TD` or `graph LR`).
-   - Use standard Mermaid nodes: `A[Label] --> B(Process) --> C{Decision}`.
-   - Do NOT include syntax errors, unquoted parentheses inside brackets, or complex styling that breaks the Mermaid parser.
-5. Key Metrics Callout Bar:
-   - 3 to 4 secondary micro-metrics with icons (e.g., CVSS Score, Memory Bandwidth, SLA hours).
-6. Designer Icon & Asset Guide:
-   - Explicit FontAwesome or Lucide icon names for each section (e.g., 'fa-shield-halved', 'fa-bolt', 'fa-server') to guide visual artists."""
-
-    JSON_SCHEMA_INSTRUCTION = """Provide your response as a strictly valid JSON object matching this schema:
-```json
+INFOGRAPHIC_FEW_SHOT_EXAMPLE = """
+Example Output Structure:
 {
-  "infographic_title": "string",
-  "subtitle": "string",
-  "visual_theme": {
-    "recommended_palette": {
-      "primary_color": "#2563eb",
-      "accent_color": "#ef4444",
-      "background_color": "#0f172a",
-      "text_color": "#ffffff"
-    },
-    "mood": "string"
-  },
-  "hero_statistic": {
-    "metric_value": "string (e.g. 45 MIN)",
-    "label": "string",
-    "context": "string"
-  },
-  "three_column_grid": {
-    "column_1": {
-      "header": "string",
-      "bullet_points": ["string"],
-      "suggested_icon": "string"
-    },
-    "column_2": {
-      "header": "string",
-      "bullet_points": ["string"],
-      "suggested_icon": "string"
-    },
-    "column_3": {
-      "header": "string",
-      "bullet_points": ["string"],
-      "suggested_icon": "string"
-    }
-  },
-  "mermaid_diagram": {
-    "diagram_type": "flowchart",
-    "mermaid_syntax": "graph LR\\n  A[Source / Ingress] --> B(Analysis / API)\\n  B --> C{Decision / Filter}\\n  C -->|Alert| D[Immediate Action]"
-  },
-  "secondary_metrics": [
+  "main_title": "Anatomy of the Apex IAM Gateway Zero-Day Exploit",
+  "hero_statistic": "14,000+ SERVERS EXPOSED",
+  "layout_style": "3-Column Comparison",
+  "sections": [
     {
-      "value": "string",
-      "label": "string",
-      "icon": "string"
+      "stat_or_icon": "fa-bug",
+      "heading": "1. Ingress Vulnerability",
+      "description": "Unauthenticated attackers exploit TLS handshake memory corruption on port 8443 to achieve remote code execution."
+    },
+    {
+      "stat_or_icon": "18 MINS",
+      "heading": "2. Blast Radius & Exfiltration",
+      "description": "Adversaries escalate to domain controller administrative privileges within 18 minutes, deploying AES-256 ransomware."
+    },
+    {
+      "stat_or_icon": "fa-shield-halved",
+      "heading": "3. Immediate Containment",
+      "description": "Isolate port 8443 upstream on border firewalls and deploy vendor Emergency Patch v5.1.4 immediately."
     }
   ],
-  "designer_notes": [
-    "string"
+  "color_palette_recommendation": [
+    "#EF4444 (Emergency Red)",
+    "#0F172A (Midnight Slate Background)",
+    "#3B82F6 (Remediation Blue)",
+    "#10B981 (Verified Green)"
   ]
 }
+"""
+
+
+def generate_infographic_plan(
+    raw_text: str,
+    tone: str = "Professional",
+    target_audience: str = "General Public",
+    objective: str = "Inform",
+    detail_level: str = "Standard",
+    model: str = "llama3.1"
+) -> InfographicPlan:
+    """Generates an InfographicPlan model validated against backend.schemas.InfographicPlan."""
+    system_prompt = INFOGRAPHIC_SYSTEM_PROMPT.format(
+        tone=tone,
+        target_audience=target_audience,
+        objective=objective,
+        detail_level=detail_level
+    )
+
+    user_prompt = f"""Transform the following source content into an Infographic Plan.
+
+{INFOGRAPHIC_FEW_SHOT_EXAMPLE}
+
+SOURCE CONTENT:
+{raw_text}
+
+Respond ONLY with the JSON object."""
+
+    json_dict = call_ollama_json(system_prompt=system_prompt, user_prompt=user_prompt, model=model)
+    return InfographicPlan.model_validate(json_dict)

@@ -1,177 +1,196 @@
 """
-Artefact Transformation Orchestrator.
-Main entrypoint for coordinating multi-deliverable generation:
-generate_artefacts(request: TransformRequest) -> TransformResponse
+Orchestration Module for Content Transformation Pipeline.
+Implements transform_content(request: TransformRequest) -> TransformResponse
+mapping selected_formats to specific generators and validating strictly against backend.schemas.
 """
 
 import logging
-from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, Field
-
-from .social_prompts import (
+import os
+from typing import Dict, Any, Optional
+from backend.schemas import (
+    TransformRequest,
+    TransformResponse,
     LinkedInPost,
     TwitterThread,
-    generate_linkedin_post,
-    generate_twitter_thread,
+    Advisory,
+    PresentationDeck,
+    VideoPackage,
+    InfographicPlan,
+    ExecutiveSummary,
 )
-from .advisory_prompts import Advisory, generate_advisory
-from .presentation_prompts import PresentationDeck, generate_presentation_deck
-from .video_prompts import VideoPackage, generate_video_package
-from .infographic_prompts import InfographicPlan, generate_infographic_plan
-from .summary_prompts import ExecutiveSummary, generate_executive_summary
+from .social_prompts import generate_linkedin_post, generate_twitter_thread
+from .advisory_prompts import generate_advisory
+from .presentation_prompts import generate_presentation_deck
+from .video_prompts import generate_video_package
+from .infographic_prompts import generate_infographic_plan
+from .summary_prompts import generate_executive_summary
 
 logger = logging.getLogger(__name__)
+DEFAULT_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1")
 
 
-# =====================================================================
-# Request / Response Models
-# =====================================================================
+def _derive_project_title(raw_text: str, response_fields: Dict[str, Any]) -> str:
+    """Derives a sensible project title from generated deliverables or raw text header."""
+    if "advisory" in response_fields and response_fields["advisory"]:
+        return response_fields["advisory"].title
+    if "presentation_deck" in response_fields and response_fields["presentation_deck"]:
+        return response_fields["presentation_deck"].deck_title
+    if "video_package" in response_fields and response_fields["video_package"]:
+        return response_fields["video_package"].title
+    if "infographic_plan" in response_fields and response_fields["infographic_plan"]:
+        return response_fields["infographic_plan"].main_title
 
-class TransformRequest(BaseModel):
+    # Fallback to first non-empty line of source text
+    for line in raw_text.splitlines():
+        line = line.strip().lstrip("#").strip()
+        if line and len(line) > 5:
+            return line[:80]
+    return "Automated Content Transformation"
+
+
+def transform_content(
+    request: TransformRequest,
+    model: str = DEFAULT_MODEL
+) -> TransformResponse:
     """
-    Input request for content transformation.
-    Specifies source content, selected deliverables, and optional parameter matrix.
-    """
-    source_content: str = Field(description="Raw source text, document excerpt, or incident notes")
-    artefacts: List[str] = Field(
-        description=(
-            "List of requested artefact identifiers: "
-            "['linkedin', 'twitter', 'advisory', 'presentation', 'video', 'infographic', 'summary']"
-        )
-    )
-    parameters: Optional[Dict[str, Any]] = Field(
-        default=None,
-        description="Configurable parameters: target_audience, tone, language, detail_level, objective"
-    )
-    model: Optional[str] = Field(
-        default=None,
-        description="Target Ollama model identifier (defaults to llama3.1:latest)"
-    )
+    Main orchestration function for multi-artefact content transformation.
 
-
-class TransformResponse(BaseModel):
-    """
-    Consolidated output containing all requested deliverables parsed via Pydantic v2.
-    """
-    linkedin_post: Optional[LinkedInPost] = Field(default=None, description="Generated LinkedIn post deliverable")
-    twitter_thread: Optional[TwitterThread] = Field(default=None, description="Generated Twitter/X thread deliverable")
-    advisory: Optional[Advisory] = Field(default=None, description="Generated Formal Advisory deliverable")
-    presentation_deck: Optional[PresentationDeck] = Field(default=None, description="Generated Presentation Deck deliverable")
-    video_package: Optional[VideoPackage] = Field(default=None, description="Generated Video Production Package deliverable")
-    infographic_plan: Optional[InfographicPlan] = Field(default=None, description="Generated Infographic Blueprint deliverable")
-    executive_summary: Optional[ExecutiveSummary] = Field(default=None, description="Generated Executive Summary deliverable")
-    errors: Optional[Dict[str, str]] = Field(default=None, description="Per-artefact generation error details if any failed")
-
-
-# =====================================================================
-# Orchestrator Function
-# =====================================================================
-
-def generate_artefacts(request: TransformRequest) -> TransformResponse:
-    """
-    Coordinates multi-deliverable generation:
-    1. Inspects request.artefacts list.
-    2. Calls the respective generator functions with source content and parameters.
-    3. Validates and parses each LLM output using Pydantic's model_validate_json().
-    4. Collects results and any errors into a unified TransformResponse.
+    Inspects request.selected_formats, invokes the corresponding generator for each format,
+    validates returned JSON against Pydantic models in backend.schemas,
+    and returns a consolidated TransformResponse.
 
     Args:
-        request: TransformRequest containing source content, requested artefacts, and parameters.
+        request: TransformRequest containing raw_text, parameters, and selected_formats.
+        model: Ollama model name (default from env or llama3.1).
 
     Returns:
-        TransformResponse populated with validated Pydantic model instances.
+        TransformResponse populated with validated deliverables.
     """
-    response_kwargs: Dict[str, Any] = {}
-    errors: Dict[str, str] = {}
+    raw_text = request.raw_text
+    tone = request.tone
+    target_audience = request.target_audience
+    objective = request.objective
+    detail_level = request.detail_level
 
-    # Normalize requested artefact keys
-    requested_set = {a.strip().lower().replace(" ", "_").replace("-", "_") for a in request.artefacts}
+    # Normalize format keys
+    normalized_formats = {
+        fmt.strip().lower().replace(" ", "_").replace("-", "_")
+        for fmt in request.selected_formats
+    }
 
-    # 1. 💼 LinkedIn Post
-    if "linkedin" in requested_set or "linkedin_post" in requested_set:
+    response_dict: Dict[str, Any] = {}
+
+    # 1. Video Package
+    if "video" in normalized_formats or "video_package" in normalized_formats:
         try:
-            response_kwargs["linkedin_post"] = generate_linkedin_post(
-                source_content=request.source_content,
-                parameters=request.parameters,
-                model=request.model,
+            logger.info("Generating Video Package...")
+            response_dict["video_package"] = generate_video_package(
+                raw_text=raw_text,
+                tone=tone,
+                target_audience=target_audience,
+                objective=objective,
+                detail_level=detail_level,
+                model=model,
             )
         except Exception as e:
-            logger.error(f"Failed generating LinkedIn post: {e}")
-            errors["linkedin_post"] = str(e)
+            logger.error(f"Failed to generate Video Package: {e}")
 
-    # 2. 🐦 Twitter / X Thread
-    if "twitter" in requested_set or "twitter_thread" in requested_set or "x" in requested_set or "x_thread" in requested_set:
+    # 2. LinkedIn Post
+    if "linkedin" in normalized_formats or "linkedin_post" in normalized_formats:
         try:
-            response_kwargs["twitter_thread"] = generate_twitter_thread(
-                source_content=request.source_content,
-                parameters=request.parameters,
-                model=request.model,
+            logger.info("Generating LinkedIn Post...")
+            response_dict["linkedin_post"] = generate_linkedin_post(
+                raw_text=raw_text,
+                tone=tone,
+                target_audience=target_audience,
+                objective=objective,
+                detail_level=detail_level,
+                model=model,
             )
         except Exception as e:
-            logger.error(f"Failed generating Twitter thread: {e}")
-            errors["twitter_thread"] = str(e)
+            logger.error(f"Failed to generate LinkedIn Post: {e}")
 
-    # 3. 🛡️ Formal Advisory
-    if "advisory" in requested_set or "formal_advisory" in requested_set:
+    # 3. Twitter / X Thread
+    if "twitter" in normalized_formats or "twitter_thread" in normalized_formats or "x" in normalized_formats:
         try:
-            response_kwargs["advisory"] = generate_advisory(
-                source_content=request.source_content,
-                parameters=request.parameters,
-                model=request.model,
+            logger.info("Generating Twitter/X Thread...")
+            response_dict["twitter_thread"] = generate_twitter_thread(
+                raw_text=raw_text,
+                tone=tone,
+                target_audience=target_audience,
+                objective=objective,
+                detail_level=detail_level,
+                model=model,
             )
         except Exception as e:
-            logger.error(f"Failed generating Advisory: {e}")
-            errors["advisory"] = str(e)
+            logger.error(f"Failed to generate Twitter/X Thread: {e}")
 
-    # 4. 📽️ Presentation Deck
-    if "presentation" in requested_set or "presentation_deck" in requested_set or "deck" in requested_set or "slides" in requested_set:
+    # 4. Formal Advisory
+    if "advisory" in normalized_formats or "structured_advisory" in normalized_formats:
         try:
-            response_kwargs["presentation_deck"] = generate_presentation_deck(
-                source_content=request.source_content,
-                parameters=request.parameters,
-                model=request.model,
+            logger.info("Generating Advisory...")
+            response_dict["advisory"] = generate_advisory(
+                raw_text=raw_text,
+                tone=tone,
+                target_audience=target_audience,
+                objective=objective,
+                detail_level=detail_level,
+                model=model,
             )
         except Exception as e:
-            logger.error(f"Failed generating Presentation Deck: {e}")
-            errors["presentation_deck"] = str(e)
+            logger.error(f"Failed to generate Advisory: {e}")
 
-    # 5. 🎬 Video Package
-    if "video" in requested_set or "video_package" in requested_set:
+    # 5. Infographic Plan
+    if "infographic" in normalized_formats or "infographic_plan" in normalized_formats or "infographic_blueprint" in normalized_formats:
         try:
-            response_kwargs["video_package"] = generate_video_package(
-                source_content=request.source_content,
-                parameters=request.parameters,
-                model=request.model,
+            logger.info("Generating Infographic Plan...")
+            response_dict["infographic_plan"] = generate_infographic_plan(
+                raw_text=raw_text,
+                tone=tone,
+                target_audience=target_audience,
+                objective=objective,
+                detail_level=detail_level,
+                model=model,
             )
         except Exception as e:
-            logger.error(f"Failed generating Video Package: {e}")
-            errors["video_package"] = str(e)
+            logger.error(f"Failed to generate Infographic Plan: {e}")
 
-    # 6. 📊 Infographic Blueprint
-    if "infographic" in requested_set or "infographic_plan" in requested_set or "blueprint" in requested_set:
+    # 6. Executive Summary
+    if "executive_summary" in normalized_formats or "summary" in normalized_formats or "exec_summary" in normalized_formats:
         try:
-            response_kwargs["infographic_plan"] = generate_infographic_plan(
-                source_content=request.source_content,
-                parameters=request.parameters,
-                model=request.model,
+            logger.info("Generating Executive Summary...")
+            response_dict["executive_summary"] = generate_executive_summary(
+                raw_text=raw_text,
+                tone=tone,
+                target_audience=target_audience,
+                objective=objective,
+                detail_level=detail_level,
+                model=model,
             )
         except Exception as e:
-            logger.error(f"Failed generating Infographic Plan: {e}")
-            errors["infographic_plan"] = str(e)
+            logger.error(f"Failed to generate Executive Summary: {e}")
 
-    # 7. 📑 Executive Summary
-    if "summary" in requested_set or "executive_summary" in requested_set or "exec_summary" in requested_set:
+    # 7. Presentation Deck
+    if "presentation" in normalized_formats or "presentation_deck" in normalized_formats or "slides" in normalized_formats:
         try:
-            response_kwargs["executive_summary"] = generate_executive_summary(
-                source_content=request.source_content,
-                parameters=request.parameters,
-                model=request.model,
+            logger.info("Generating Presentation Deck...")
+            response_dict["presentation_deck"] = generate_presentation_deck(
+                raw_text=raw_text,
+                tone=tone,
+                target_audience=target_audience,
+                objective=objective,
+                detail_level=detail_level,
+                model=model,
             )
         except Exception as e:
-            logger.error(f"Failed generating Executive Summary: {e}")
-            errors["executive_summary"] = str(e)
+            logger.error(f"Failed to generate Presentation Deck: {e}")
 
-    if errors:
-        response_kwargs["errors"] = errors
+    # Build and validate consolidated TransformResponse
+    project_title = _derive_project_title(raw_text, response_dict)
+    response_dict["project_title"] = project_title
 
-    return TransformResponse(**response_kwargs)
+    return TransformResponse.model_validate(response_dict)
+
+
+# Backwards compatibility alias
+generate_artefacts = transform_content

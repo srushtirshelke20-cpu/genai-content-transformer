@@ -1,60 +1,27 @@
 """
-Prompts Package - Gen AI Content Transformation Engine.
-Role: Member 3 Subsystem.
-
-Exports:
-- Base prompt builders & TransformationParameters matrix.
-- 🎬 Video Package prompt builders.
-- 💼 LinkedIn & 🐦 Twitter/X prompt builders.
-- 🛡️ Formal Advisory & 📑 Executive Summary prompt builders.
-- 📊 Infographic Blueprint prompt builders.
-- 📽️ Presentation Deck prompt builders (.pptx ready).
+backend.prompts Package.
+LLM prompt generation and orchestration pipeline for Gen AI Content Transformation Engine.
 """
 
-from .base_prompt import BasePromptBuilder, TransformationParameters
-from .video_prompts import VideoPromptBuilder, build_video_package_prompt
-from .social_prompts import (
-    LinkedInPromptBuilder,
-    TwitterThreadPromptBuilder,
-    build_linkedin_prompt,
-    build_twitter_thread_prompt,
-)
-from .advisory_prompts import (
-    FormalAdvisoryPromptBuilder,
-    ExecutiveSummaryPromptBuilder,
-    build_formal_advisory_prompt,
-    build_executive_summary_prompt,
-)
-from .infographic_prompts import (
-    InfographicPromptBuilder,
-    build_infographic_blueprint_prompt,
-)
-from .presentation_prompts import (
-    PresentationDeckPromptBuilder,
-    build_presentation_deck_prompt,
-)
+from .base_prompt import client, call_ollama_json
+from .social_prompts import generate_linkedin_post, generate_twitter_thread
+from .advisory_prompts import generate_advisory
+from .presentation_prompts import generate_presentation_deck
+from .video_prompts import generate_video_package
+from .infographic_prompts import generate_infographic_plan
+from .summary_prompts import generate_executive_summary
+from .orchestrator import transform_content, generate_artefacts
 
 __all__ = [
-    # Parameters & Base
-    "TransformationParameters",
-    "BasePromptBuilder",
-    # Deliverable 1: Video Package
-    "VideoPromptBuilder",
-    "build_video_package_prompt",
-    # Deliverable 2 & 3: Social Media (LinkedIn & Twitter/X)
-    "LinkedInPromptBuilder",
-    "build_linkedin_prompt",
-    "TwitterThreadPromptBuilder",
-    "build_twitter_thread_prompt",
-    # Deliverable 4 & 6: Advisory & Executive Summary
-    "FormalAdvisoryPromptBuilder",
-    "build_formal_advisory_prompt",
-    "ExecutiveSummaryPromptBuilder",
-    "build_executive_summary_prompt",
-    # Deliverable 5: Infographic Blueprint
-    "InfographicPromptBuilder",
-    "build_infographic_blueprint_prompt",
-    # Deliverable 7: Presentation Deck
-    "PresentationDeckPromptBuilder",
-    "build_presentation_deck_prompt",
+    "client",
+    "call_ollama_json",
+    "generate_linkedin_post",
+    "generate_twitter_thread",
+    "generate_advisory",
+    "generate_presentation_deck",
+    "generate_video_package",
+    "generate_infographic_plan",
+    "generate_executive_summary",
+    "transform_content",
+    "generate_artefacts",
 ]

@@ -1,107 +1,76 @@
 """
 Executive Summary Prompts Module.
-Generates ExecutiveSummary artefacts containing BLUF (Bottom Line Up Front),
-key takeaways, decision matrix, and strategic impact analysis.
+Generates ultra-dense C-Suite executive briefings with BLUF, key findings,
+strategic implications, and recommended decisions.
+Strictly validates against backend.schemas.ExecutiveSummary.
 """
 
-from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, Field
-from .base_prompt import invoke_ollama, format_parameters
+from typing import Dict, Any, Optional
+from backend.schemas import ExecutiveSummary
+from .base_prompt import call_ollama_json
 
 
-# =====================================================================
-# Pydantic v2 Models
-# =====================================================================
+SUMMARY_SYSTEM_PROMPT = """You are an executive chief of staff and corporate intelligence strategist.
+Transform the provided source content into an ultra-dense, C-Suite ready Executive Summary.
+Tone: {tone}
+Target Audience: {target_audience}
+Objective: {objective}
+Detail Level: {detail_level}
 
-class DecisionOption(BaseModel):
-    """Option in the executive decision matrix."""
-    option_name: str = Field(description="Name of the strategic or operational choice")
-    cost_or_downtime: str = Field(description="Estimated cost, resource commitment, or service downtime")
-    residual_risk: str = Field(description="Level and nature of remaining risk (e.g. 'Low', 'High')")
-    recommendation_status: str = Field(description="'Recommended', 'Alternative', or 'Not Advised'")
-    rationale: str = Field(description="Brief justification for the leadership evaluation")
+CRITICAL RULES:
+1. bluf: Bottom Line Up Front - exactly 1 to 2 crisp, high-impact sentences stating the core issue and required leadership decision.
+2. key_findings: List of 3 to 5 high-density, quantified takeaways with metrics, exposure numbers, or timelines.
+3. strategic_implications: 2 to 3 sentences analyzing business, compliance, brand, or operational consequences.
+4. recommended_decision: Unambiguous, actionable directive for leadership (e.g. authorize emergency downtime, approve patch deployment).
 
-
-class ExecutiveSummary(BaseModel):
-    """Structured deliverable for an Executive Summary."""
-    document_title: str = Field(description="Executive briefing title")
-    bluf: str = Field(description="Bottom Line Up Front: 1-2 punchy sentences stating the situation and core decision")
-    key_takeaways: List[str] = Field(description="3 to 5 high-density, quantified executive takeaways")
-    decision_matrix: List[DecisionOption] = Field(description="Structured trade-off matrix comparing actionable options")
-    strategic_impact: List[str] = Field(description="Implications on organizational reputation, compliance, operations, or revenue")
-    risk_assessment: str = Field(description="Overall risk summary (Probability vs. Business Impact)")
-
-
-# =====================================================================
-# Generator Function
-# =====================================================================
-
-def generate_executive_summary(
-    source_content: str,
-    parameters: Optional[Dict[str, Any]] = None,
-    model: Optional[str] = None
-) -> ExecutiveSummary:
-    """
-    Transforms source content into an ultra-dense C-Suite Executive Summary.
-    Enforces BLUF upfront, quantified takeaways, decision matrix, and strategic impact.
-    Parses and validates output using Pydantic's model_validate_json().
-    """
-    param_text = format_parameters(parameters)
-
-    system_prompt = (
-        "You are an executive chief of staff and corporate strategist. "
-        "Transform the provided content into an ultra-dense, C-Suite ready Executive Summary. "
-        "Strict rule: start with a crisp BLUF (Bottom Line Up Front) in 1-2 sentences. "
-        "Provide quantified takeaways, an actionable decision matrix, and strategic business impact. "
-        "You MUST respond ONLY with a parseable JSON object matching the requested schema."
-    )
-
-    prompt = f"""Generate a C-Suite Executive Summary based on the source content below.
-
-CONFIGURABLE PARAMETERS:
-{param_text}
-
-EXECUTIVE REQUIREMENTS:
-1. BLUF: Exactly 1-2 sentences at the absolute top stating situation and required leadership decision.
-2. 3 to 5 Bulleted Key Takeaways with numbers and impact metrics.
-3. Strategic Decision Matrix: Compare 2-3 options with cost/downtime, residual risk, and status.
-4. Strategic Impact: High-level organizational and business consequences.
-5. Risk Assessment: Overall risk rating and drivers.
-
-SOURCE CONTENT:
-{source_content}
-
-Respond ONLY with a JSON object matching this exact schema:
+You MUST respond strictly with a valid JSON object matching this schema:
 {{
-  "document_title": "string",
-  "bluf": "string (1-2 sentences stating the core decision or outcome)",
-  "key_takeaways": [
-    "Quantified key takeaway 1",
-    "Quantified key takeaway 2",
-    "Quantified key takeaway 3"
-  ],
-  "decision_matrix": [
-    {{
-      "option_name": "Option A: Immediate Hotfix Deployment",
-      "cost_or_downtime": "15-minute maintenance window",
-      "residual_risk": "Near Zero",
-      "recommendation_status": "Recommended",
-      "rationale": "Neutralizes perimeter RCE vulnerability immediately"
-    }},
-    {{
-      "option_name": "Option B: Upstream Port Isolation Only",
-      "cost_or_downtime": "Zero downtime",
-      "residual_risk": "High (Internal LAN threat)",
-      "recommendation_status": "Alternative",
-      "rationale": "Temporary stopgap only until patch can be scheduled"
-    }}
-  ],
-  "strategic_impact": [
-    "Prevents regulatory disclosure penalties under cybersecurity incident guidelines",
-    "Eliminates lateral movement threat across enterprise subnetworks"
-  ],
-  "risk_assessment": "CRITICAL (Probability: High, Impact: Catastrophic without emergency mitigation)"
+  "bluf": "string (1-2 punchy sentences)",
+  "key_findings": ["string"],
+  "strategic_implications": "string",
+  "recommended_decision": "string"
 }}"""
 
-    raw_json = invoke_ollama(prompt=prompt, system_prompt=system_prompt, model=model)
-    return ExecutiveSummary.model_validate_json(raw_json)
+SUMMARY_FEW_SHOT_EXAMPLE = """
+Example Output Structure:
+{
+  "bluf": "An active zero-day RCE flaw in Apex IAM Gateways requires authorizing an immediate 15-minute emergency maintenance window tonight to deploy Emergency Patch v5.1.4 and avoid critical ransomware compromise.",
+  "key_findings": [
+    "Vulnerability CVE-2026-8891 carries a maximum CVSS 9.8 critical severity rating.",
+    "Over 14,000 corporate identity servers are exposed with active in-the-wild exploitation.",
+    "Average lateral movement from initial perimeter breach to domain controller takeover is 18 minutes.",
+    "Emergency patch v5.1.4 is available and successfully tested for fleet-wide rollout."
+  ],
+  "strategic_implications": "Unpatched exposure risks complete enterprise data exfiltration, database ransomware encryption, and severe regulatory reporting penalties under cybersecurity incident disclosure mandates.",
+  "recommended_decision": "Authorize SecOps to enforce immediate external firewall drops on port 8443 and execute fleet-wide deployment of Emergency Patch v5.1.4 during tonight's 23:30 maintenance window."
+}
+"""
+
+
+def generate_executive_summary(
+    raw_text: str,
+    tone: str = "Authoritative",
+    target_audience: str = "C-Suite",
+    objective: str = "Alert",
+    detail_level: str = "Brief",
+    model: str = "llama3.1"
+) -> ExecutiveSummary:
+    """Generates an ExecutiveSummary model validated against backend.schemas.ExecutiveSummary."""
+    system_prompt = SUMMARY_SYSTEM_PROMPT.format(
+        tone=tone,
+        target_audience=target_audience,
+        objective=objective,
+        detail_level=detail_level
+    )
+
+    user_prompt = f"""Transform the following source content into an Executive Summary.
+
+{SUMMARY_FEW_SHOT_EXAMPLE}
+
+SOURCE CONTENT:
+{raw_text}
+
+Respond ONLY with the JSON object."""
+
+    json_dict = call_ollama_json(system_prompt=system_prompt, user_prompt=user_prompt, model=model)
+    return ExecutiveSummary.model_validate(json_dict)

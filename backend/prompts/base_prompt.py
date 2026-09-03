@@ -1,122 +1,143 @@
 """
-Base Prompt Module for Gen AI Content Transformation Engine.
-Provides core system prompts, hallucination guardrails, and parameter matrix formatting.
+Base Prompt & Ollama Client Module.
+Initializes OpenAI client targeting local Ollama (http://localhost:11434/v1).
+Provides call_ollama_json utility with strict JSON mode, robust error handling,
+and markdown fence stripping.
 """
 
+import os
+import json
+import re
+import logging
 from typing import Dict, Any, Optional
-from dataclasses import dataclass
+from openai import OpenAI
+
+logger = logging.getLogger(__name__)
+
+# Ollama Endpoint Configuration
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+OLLAMA_API_KEY = os.getenv("OLLAMA_API_KEY", "ollama")
+DEFAULT_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1")
+
+# Initialize OpenAI Client pointing to Ollama
+client = OpenAI(
+    base_url=OLLAMA_BASE_URL,
+    api_key=OLLAMA_API_KEY,
+)
 
 
-@dataclass
-class TransformationParameters:
-    """Configurable parameter matrix governing content transformation."""
-    target_audience: str = "Executive / C-Suite"
-    tone: str = "Authoritative & Objective"
-    level_of_detail: str = "Standard"
-    communication_objective: str = "Inform & Synthesize"
-    language: str = "English"
-    content_style: str = "Professional / Enterprise"
-    additional_instructions: Optional[str] = None
-
-
-class BasePromptBuilder:
+def clean_json_string(raw: str) -> str:
     """
-    Base Prompt Builder that injects system guardrails, source attribution constraints,
-    and parameter matrix dimensions into all deliverable prompts.
+    Cleans and extracts valid JSON substring from LLM response.
+    Strips markdown code blocks, backticks, and any leading/trailing chatter.
     """
+    cleaned = raw.strip()
 
-    CORE_SYSTEM_INSTRUCTION = (
-        "You are an expert Content Transformation AI Engine. Your primary purpose is to analyze "
-        "heterogeneous source content (threat intelligence, technical reports, policy updates, "
-        "academic papers, incident briefs) and transform it into high-impact, tailored communication "
-        "deliverables with absolute precision, factual grounding, and domain-appropriate styling."
-    )
-
-    GUARDRAILS = (
-        "CRITICAL GROUNDING & ACCURACY CONSTRAINTS:\n"
-        "1. STRICT FACTUAL GROUNDING: Rely strictly on the information presented in the SOURCE CONTENT. "
-        "Do not invent facts, CVE numbers, dates, statistics, benchmark figures, or quotes.\n"
-        "2. UNCERTAINTY HANDLING: If an essential detail is absent from the source, clearly indicate it "
-        "as 'Not specified in source' rather than hallucinating.\n"
-        "3. ATTRIBUTION: Maintain fidelity to named entities, technical specifications, and severity levels.\n"
-        "4. AUDIENCE CALIBRATION: Strictly adapt terminology, density, and register to match the requested "
-        "TARGET AUDIENCE and TONE without sacrificing factual accuracy."
-    )
-
-    @classmethod
-    def format_parameters_block(cls, params: Optional[TransformationParameters] = None) -> str:
-        """Formats the parameter matrix into a clear prompt block for the LLM."""
-        if params is None:
-            params = TransformationParameters()
-
-        block = [
-            "### OPERATIONAL PARAMETER MATRIX",
-            f"- **Target Audience**: {params.target_audience}",
-            f"- **Tone & Register**: {params.tone}",
-            f"- **Level of Detail**: {params.level_of_detail}",
-            f"- **Communication Objective**: {params.communication_objective}",
-            f"- **Target Language**: {params.language}",
-            f"- **Style Guide**: {params.content_style}",
-        ]
-
-        if params.additional_instructions:
-            block.append(f"- **Operator Guidance**: {params.additional_instructions.strip()}")
-
-        return "\n".join(block)
-
-    @classmethod
-    def format_source_block(cls, source_content: str, source_metadata: Optional[Dict[str, Any]] = None) -> str:
-        """Wraps source content cleanly with source metadata if available."""
-        metadata_lines = []
-        if source_metadata:
-            metadata_lines.append("Source Metadata:")
-            for k, v in source_metadata.items():
-                metadata_lines.append(f"  - {k.capitalize()}: {v}")
-            metadata_str = "\n".join(metadata_lines) + "\n\n"
+    # Strip markdown ```json ... ``` or ``` ... ```
+    if "```" in cleaned:
+        # Match content inside ```json ... ``` or ``` ... ```
+        match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", cleaned, re.DOTALL)
+        if match:
+            cleaned = match.group(1).strip()
         else:
-            metadata_str = ""
+            # Fallback: remove all backtick fences
+            cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
+            cleaned = re.sub(r"\s*```$", "", cleaned).strip()
 
-        return (
-            "### SOURCE CONTENT TO TRANSFORM\n"
-            f"{metadata_str}"
-            "```text\n"
-            f"{source_content.strip()}\n"
-            "```"
+    # Extract substring between first { and last }
+    first_brace = cleaned.find("{")
+    last_brace = cleaned.rfind("}")
+    if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
+        cleaned = cleaned[first_brace : last_brace + 1]
+
+    return cleaned
+
+
+def call_ollama_json(
+    system_prompt: str,
+    user_prompt: str,
+    model: str = DEFAULT_MODEL,
+    temperature: float = 0.2,
+) -> Dict[str, Any]:
+    """
+    Calls Ollama via OpenAI client enforcing JSON mode.
+    Handles markdown stripping and JSON parsing.
+
+    Args:
+        system_prompt: Role and schema guidance for the LLM.
+        user_prompt: Source content and task prompt.
+        model: Ollama model name (default: llama3.1).
+        temperature: Sampling temperature (default 0.2 for consistency).
+
+    Returns:
+        Parsed dictionary from the LLM's JSON response.
+
+    Raises:
+        RuntimeError: If LLM call fails or returns unparseable JSON.
+    """
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
+    ]
+
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            messages=messages,
+            temperature=temperature,
+            response_format={"type": "json_object"},
         )
+        raw_content = response.choices[0].message.content or "{}"
+    except Exception as e:
+        logger.error(f"Error communicating with Ollama endpoint ({OLLAMA_BASE_URL}): {e}")
+        raise RuntimeError(f"Ollama API request failed: {e}") from e
 
-    @classmethod
-    def assemble_prompt(
-        cls,
-        task_instruction: str,
-        source_content: str,
-        params: Optional[TransformationParameters] = None,
-        source_metadata: Optional[Dict[str, Any]] = None,
-        output_schema_instruction: Optional[str] = None
-    ) -> str:
-        """Assembles a full prompt containing system instructions, parameters, task, schema, and source."""
-        sections = [
-            cls.CORE_SYSTEM_INSTRUCTION,
-            "",
-            cls.GUARDRAILS,
-            "",
-            cls.format_parameters_block(params),
-            "",
-            "### TASK INSTRUCTION",
-            task_instruction.strip(),
-        ]
+    cleaned_json_str = clean_json_string(raw_content)
 
-        if output_schema_instruction:
-            sections.extend([
-                "",
-                "### REQUIRED OUTPUT FORMAT & SCHEMA",
-                output_schema_instruction.strip()
-            ])
+    try:
+        return json.loads(cleaned_json_str)
+    except json.JSONDecodeError as err:
+        logger.error(f"Failed to decode JSON from Ollama. Raw content:\n{raw_content}")
+        raise RuntimeError(f"Ollama returned invalid JSON: {err}\nContent was: {raw_content[:200]}...") from err
 
-        sections.extend([
-            "",
-            cls.format_source_block(source_content, source_metadata),
-            "",
-            "Begin transformation below:"
-        ])
 
-        return "\n".join(sections)
+def get_client() -> OpenAI:
+    """Returns the configured OpenAI client."""
+    return client
+
+
+def invoke_ollama(
+    prompt: str,
+    system_prompt: Optional[str] = None,
+    model: Optional[str] = None,
+    temperature: float = 0.2,
+) -> str:
+    """
+    Invokes Ollama returning the raw string response.
+    Provided for backward compatibility.
+    """
+    target_model = model or DEFAULT_MODEL
+    default_system = (
+        "You are an expert AI Content Transformation Engine. "
+        "Analyze the provided source information and transform it into the requested "
+        "communication artefact. Respond strictly with a valid JSON object."
+    )
+    messages = [
+        {"role": "system", "content": system_prompt or default_system},
+        {"role": "user", "content": prompt},
+    ]
+    response = client.chat.completions.create(
+        model=target_model,
+        messages=messages,
+        temperature=temperature,
+        response_format={"type": "json_object"},
+    )
+    return response.choices[0].message.content or "{}"
+
+
+def format_parameters(parameters: Optional[Dict[str, Any]] = None) -> str:
+    """Formats configurable parameters into prompt text."""
+    if not parameters:
+        return "Target Audience: Executive / Professional\nTone: Authoritative & Objective\nLanguage: English"
+    lines = [f"{k.replace('_', ' ').title()}: {v}" for k, v in parameters.items()]
+    return "\n".join(lines)

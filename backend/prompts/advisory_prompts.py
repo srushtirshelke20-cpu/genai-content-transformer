@@ -1,93 +1,90 @@
-
----
-
-### 3. `prompts/advisory_prompts.py`
-**Deliverables:** 🛡️ **Formal Advisory** & 📑 **Executive Summary**  
-**Key Features:** Formal header (Advisory ID, Date, Severity Level), Context, Impact, 3-stage Action Plan, plus **BLUF (Bottom Line Up Front)**, 3–5 bulleted takeaways, and **Strategic Decision Matrix**.
-
-```python
 """
-Advisory and Executive Summary Prompts Module.
-Generates prompts for:
-1. Formal Advisories (Compliance, Cyber Threat, Policy) with document headers, severity classification, and actionable runbooks.
-2. Executive Summaries with BLUF (Bottom Line Up Front), key takeaways, decision matrix, and risk assessments.
+Structured Advisory Prompts Module.
+Enforces severe/formal tone, threat context, and structured mitigation steps.
+Strictly validates against backend.schemas.Advisory.
 """
 
-from typing import Optional, Dict, Any
-from .base_prompt import BasePromptBuilder, TransformationParameters
+from typing import Dict, Any, Optional
+from backend.schemas import Advisory
+from .base_prompt import call_ollama_json
 
 
-class FormalAdvisoryPromptBuilder:
-    """Builder for Formal Advisory Prompts."""
+ADVISORY_SYSTEM_PROMPT = """You are an elite Cyber Threat Intelligence and Enterprise Compliance Officer.
+Transform the provided source content into an official, severe, and structured Advisory.
+Tone: {tone}
+Target Audience: {target_audience}
+Objective: {objective}
+Detail Level: {detail_level}
 
-    TASK_DESCRIPTION = """You are tasked with transforming the provided source content into a Formal Official Advisory suitable for enterprise security, compliance, legal, or policy dissemination.
+CRITICAL RULES:
+1. advisory_id: Standard reference identifier (e.g., ADV-2026-XXXX or SEC-ADV-[CVE]).
+2. severity_level: MUST STRICTLY BE ONE OF: "LOW", "MEDIUM", "HIGH", or "CRITICAL".
+3. date_issued: Today's date or date from source (e.g. "September 3, 2026").
+4. target_audience_or_systems: Explicit list or description of vulnerable hardware, software, or organizations.
+5. threat_or_context_summary: Concise explanation of the exploit vector, flaw mechanism, or incident context.
+6. impact_analysis: Rigorous breakdown of technical blast radius, data loss risk, and financial/business exposure.
+7. immediate_actions: List of 2 to 4 urgent actions to be executed within 0-4 hours (firewall rules, patches, port isolation).
+8. long_term_recommendations: List of 2 to 4 strategic recommendations (zero trust, MFA, architectural upgrades).
 
-Your generation must strictly follow this formal advisory structure:
-1. Formal Document Header:
-   - Advisory Identifier: A standardized unique reference (e.g., ADV-2026-XXXX or SEC-ADV-[CVE/REF]).
-   - Release Date & Revision Version (e.g., September 02, 2026 | Rev 1.0).
-   - Severity / Priority Level: CRITICAL (CVSS 9.0+), HIGH (7.0-8.9), MEDIUM (4.0-6.9), or INFORMATIONAL.
-   - Classification & Handling: (e.g., TLP:CLEAR / PUBLIC / INTERNAL RESTRICTED).
-2. Executive Overview & BLUF:
-   - A concise 2-3 sentence statement explaining the essence of the advisory.
-3. Context & Background:
-   - Detailed description of the event, vulnerability, regulatory update, or incident origin.
-4. Impact & Blast Radius Analysis:
-   - Clear breakdown of potential harm: operational downtime, financial exposure, compliance penalties, or data loss.
-5. Affected Systems, Assets, or Target Audiences:
-   - Explicit list of software versions, hardware models, departments, or customer segments impacted.
-6. Recommended Action Plan (Structured Multi-Stage Runbook):
-   - Immediate Mitigations (Workarounds, firewall drops, urgent halts to be executed within hours).
-   - Long-Term Remediation (Permanent patching, architectural refactoring, policy implementation).
-   - Audit & Verification Steps (Specific commands, queries, or logs to inspect to verify safety).
-7. References & Authority Contacts:
-   - Official CVE, vendor advisory, regulatory references, and response team contact info."""
+You MUST respond strictly with a valid JSON object matching this schema:
+{{
+  "advisory_id": "string",
+  "severity_level": "CRITICAL",
+  "date_issued": "string",
+  "target_audience_or_systems": "string",
+  "threat_or_context_summary": "string",
+  "impact_analysis": "string",
+  "immediate_actions": ["string"],
+  "long_term_recommendations": ["string"]
+}}"""
 
-    JSON_SCHEMA_INSTRUCTION = """Provide your response as a strictly valid JSON object matching this schema:
-```json
+ADVISORY_FEW_SHOT_EXAMPLE = """
+Example Output Structure:
 {
-  "document_header": {
-    "advisory_id": "string",
-    "release_date": "string",
-    "revision": "1.0",
-    "severity_level": "CRITICAL | HIGH | MEDIUM | INFORMATIONAL",
-    "cvss_score": "optional string e.g. 9.8",
-    "classification": "TLP:CLEAR"
-  },
-  "title": "string",
-  "executive_bluf": "string",
-  "background_and_context": "string",
-  "impact_analysis": {
-    "summary": "string",
-    "business_risk": "string",
-    "technical_blast_radius": "string"
-  },
-  "affected_scope": {
-    "systems_or_assets": ["string"],
-    "target_audiences": ["string"]
-  },
-  "action_plan": {
-    "immediate_mitigations": [
-      {
-        "step_number": 1,
-        "action": "string",
-        "command_or_config": "optional string",
-        "timeframe": "Immediate (< 2 hours)"
-      }
-    ],
-    "long_term_remediation": [
-      {
-        "step_number": 1,
-        "action": "string",
-        "milestone": "string"
-      }
-    ],
-    "audit_and_verification": [
-      {
-        "verification_check": "string",
-        "expected_result": "string"
-      }
-    ]
-  },
-  "references": ["string"]
+  "advisory_id": "ADV-2026-8891",
+  "severity_level": "CRITICAL",
+  "date_issued": "September 3, 2026",
+  "target_audience_or_systems": "Enterprise Identity and Access Management (IAM) Gateways v4.2 - v5.1; SecOps & Infrastructure Teams",
+  "threat_or_context_summary": "A critical CVSS 9.8 remote code execution flaw in Apex IAM Gateway allows unauthenticated remote adversaries to abuse TLS handshake memory corruption and inject ransomware payloads.",
+  "impact_analysis": "Active weaponization exposes over 14,000 corporate identity servers globally. Lateral movement to full domain controller takeover occurs within 18 minutes, resulting in unauthorized customer data exfiltration and AES-256 database volume encryption.",
+  "immediate_actions": [
+    "Immediately isolate external WAN access to port 8443 on border firewalls.",
+    "Deploy vendor Emergency Patch v5.1.4 released today across all IAM clusters.",
+    "Inspect reverse proxy logs for anomalous POST requests containing binary strings in Authorization headers."
+  ],
+  "long_term_recommendations": [
+    "Implement zero-trust certificate pinning across all edge routing infrastructure.",
+    "Enforce hardware-backed FIDO2 / MFA authentication keys enterprise-wide.",
+    "Conduct a comprehensive lateral threat hunt across internal subnets for residual adversary presence."
+  ]
 }
+"""
+
+
+def generate_advisory(
+    raw_text: str,
+    tone: str = "Urgent",
+    target_audience: str = "Technical",
+    objective: str = "Alert",
+    detail_level: str = "Comprehensive",
+    model: str = "llama3.1"
+) -> Advisory:
+    """Generates an Advisory model validated against backend.schemas.Advisory."""
+    system_prompt = ADVISORY_SYSTEM_PROMPT.format(
+        tone=tone,
+        target_audience=target_audience,
+        objective=objective,
+        detail_level=detail_level
+    )
+
+    user_prompt = f"""Transform the following source content into a Formal Advisory.
+
+{ADVISORY_FEW_SHOT_EXAMPLE}
+
+SOURCE CONTENT:
+{raw_text}
+
+Respond ONLY with the JSON object."""
+
+    json_dict = call_ollama_json(system_prompt=system_prompt, user_prompt=user_prompt, model=model)
+    return Advisory.model_validate(json_dict)
