@@ -102,11 +102,28 @@ app.add_middleware(
 # Endpoints
 # ====================================================================
 
+import socket
+
+def check_socket(host="127.0.0.1", port=11434, timeout=0.5) -> bool:
+    """Instantly checks if Ollama port is open without hanging."""
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
 @app.get("/api/health")
 def health_check():
     """Check API status and verify local Ollama connectivity."""
-    ollama_status = "offline"
-    available_models = []
+    is_alive = check_socket()
+    ollama_status = "connected" if is_alive else "offline (Ollama not running on port 11434)"
+
+    return {
+        "status": "healthy",
+        "service": "Content Transformation Engine",
+        "ollama_status": ollama_status,
+        "default_model": DEFAULT_MODEL
+    }
     
     try:
       from fastapi import Request
