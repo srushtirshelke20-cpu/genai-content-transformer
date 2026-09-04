@@ -1,38 +1,39 @@
 import sys
+import os
 import json
 import uuid
+import socket
 from pathlib import Path
 from typing import Optional, List
-import urllib.request
 
 # Ensure the root directory is in python path
-sys.path.append(str(Path(__file__).resolve().parent.parent))
+ROOT_DIR = Path(__file__).resolve().parent.parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.append(str(ROOT_DIR))
 
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Depends
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
-from backend.config import CORS_ORIGINS, EXPORT_DIR, OLLAMA_TAGS_URL, DEFAULT_MODEL
+from backend.config import CORS_ORIGINS, EXPORT_DIR, DEFAULT_MODEL
 from backend.schemas import TransformRequest, TransformResponse
 
 # ====================================================================
-# Safe Imports with Fallbacks (keeps server alive if teammates are working)
+# Safe Fallback Handlers (keeps server running even before M3/M4 finish)
 # ====================================================================
 
-# 1. Member 4 Parser Fallback
 try:
     from backend.parsers.doc_parser import extract_text_from_file
 except ImportError:
     def extract_text_from_file(file_bytes: bytes, filename: str) -> str:
         return file_bytes.decode("utf-8", errors="ignore")
 
-# 2. Member 3 Orchestrator Fallback
 try:
     from backend.prompts.orchestrator import transform_content
 except ImportError:
     def transform_content(req: TransformRequest) -> TransformResponse:
         return TransformResponse(
-            project_title=f"Transformed: {req.raw_text[:40]}...",
+            project_title=f"Transformed: {req.raw_text[:40].strip()}...",
             linkedin_post={
                 "hook": "🚨 Critical Operational Briefing",
                 "body_paragraphs": [f"Analysis conducted with tone: {req.tone} for audience: {req.target_audience}."],
@@ -60,17 +61,14 @@ except ImportError:
             }
         )
 
-# 3. Member 4 PowerPoint Exporter Fallback
 try:
     from backend.exporters.pptx_exporter import generate_pptx_file
 except ImportError:
     def generate_pptx_file(deck, filepath: str) -> str:
-        # Placeholder empty file if exporter not yet finished
         with open(filepath, "w") as f:
             f.write("PPTX placeholder")
         return filepath
 
-# 4. Member 4 Database Fallback
 try:
     from backend.database.db import save_transformation, fetch_history
 except ImportError:
@@ -102,37 +100,21 @@ app.add_middleware(
 # Endpoints
 # ====================================================================
 
-import socket
-
-def check_socket(host="127.0.0.1", port=11434, timeout=0.5) -> bool:
-    """Instantly checks if Ollama port is open without hanging."""
-    try:
-        with socket.create_connection((host, port), timeout=timeout):
-            return True
-    except OSError:
-        return False
-
 @app.get("/api/health")
 def health_check():
-    """Check API status and verify local Ollama connectivity."""
-    is_alive = check_socket()
-    ollama_status = "connected" if is_alive else "offline (Ollama not running on port 11434)"
-
+    """Instant health check - zero latency."""
     return {
         "status": "healthy",
         "service": "Content Transformation Engine",
-        "ollama_status": ollama_status,
         "default_model": DEFAULT_MODEL
     }
-    
-    try:
-      from fastapi import Request
+
 
 @app.post("/api/transform", response_model=TransformResponse)
 async def transform_endpoint(request: Request):
     """
     Main transformation gateway.
-    Seamlessly accepts direct JSON payloads OR multipart file uploads (PDF/DOCX/TXT).
+    Seamlessly accepts direct JSON payloads OR multipart file uploads.
     """
     content_type = request.headers.get("content-type", "")
     final_text = ""
@@ -142,7 +124,7 @@ async def transform_endpoint(request: Request):
     detail_level = "Standard"
     formats_list = ["linkedin", "twitter", "advisory", "executive_summary", "presentation", "video_package", "infographic"]
 
-    # 1. Handle JSON Request (from test_e2e.py or API clients)
+    # 1. Handle JSON Request
     if "application/json" in content_type:
         try:
             body = await request.json()
@@ -156,7 +138,7 @@ async def transform_endpoint(request: Request):
         detail_level = body.get("detail_level", "Standard")
         formats_list = body.get("selected_formats", formats_list)
 
-    # 2. Handle Multipart Form Upload (file upload from Frontend)
+    # 2. Handle Multipart Form Upload
     elif "multipart/form-data" in content_type:
         form = await request.form()
         file = form.get("file")
@@ -194,67 +176,20 @@ async def transform_endpoint(request: Request):
         selected_formats=formats_list
     )
 
-    # 4. Execute Transformation via Orchestrator
+    # 4. Execute Transformation
     try:
         response_data: TransformResponse = transform_content(structured_request)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Transformation error: {str(e)}")
 
-    # 5. If Presentation was requested and generated, build PPTX
+    # 5. If Presentation requested, generate PPTX
     if "presentation" in formats_list and response_data.presentation_deck:
         record_id = str(uuid.uuid4())[:8]
         filename = f"presentation_{record_id}.pptx"
         output_path = str(EXPORT_DIR / filename)
         generate_pptx_file(response_data.presentation_deck, output_path)
 
-    # 6. Save run into History Database
-    run_id = str(uuid.uuid4())
-    save_transformation(
-        record_id=run_id,
-        title=response_data.project_title,
-        raw_text=final_text[:500],
-        settings={"tone": tone, "audience": target_audience, "formats": formats_list},
-        result=response_data.model_dump()
-    )
-
-    return response_data
-    elif raw_text:
-        final_text = raw_text
-        if selected_formats:
-            try:
-                formats_list = json.loads(selected_formats)
-            except Exception:
-                formats_list = [f.strip() for f in selected_formats.split(",") if f.strip()]
-    else:
-        raise HTTPException(status_code=400, detail="No source content provided. Provide raw_text or upload a file.")
-
-    if not final_text.strip():
-        raise HTTPException(status_code=400, detail="Provided document or text is empty.")
-
-    # 2. Build structured request object
-    structured_request = TransformRequest(
-        raw_text=final_text,
-        target_audience=target_audience,
-        tone=tone,
-        objective=objective,
-        detail_level=detail_level,
-        selected_formats=formats_list
-    )
-
-    # 3. Execute Transformation via Orchestrator
-    try:
-        response_data: TransformResponse = transform_content(structured_request)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Transformation error: {str(e)}")
-
-    # 4. If Presentation was requested and generated, build real PPTX
-    if "presentation" in formats_list and response_data.presentation_deck:
-        record_id = str(uuid.uuid4())[:8]
-        filename = f"presentation_{record_id}.pptx"
-        output_path = str(EXPORT_DIR / filename)
-        generate_pptx_file(response_data.presentation_deck, output_path)
-
-    # 5. Save run into History Database
+    # 6. Save to History DB
     run_id = str(uuid.uuid4())
     save_transformation(
         record_id=run_id,
@@ -269,7 +204,6 @@ async def transform_endpoint(request: Request):
 
 @app.get("/api/download/pptx/{filename}")
 def download_pptx(filename: str):
-    """Download a generated PowerPoint file."""
     file_path = EXPORT_DIR / filename
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Requested presentation file not found.")
@@ -283,5 +217,4 @@ def download_pptx(filename: str):
 
 @app.get("/api/history")
 def get_history():
-    """Retrieve past transformation runs."""
     return {"history": fetch_history(limit=10)}
