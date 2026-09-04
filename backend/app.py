@@ -109,60 +109,98 @@ def health_check():
     available_models = []
     
     try:
-        req = urllib.request.Request(OLLAMA_TAGS_URL)
-        with urllib.request.urlopen(req, timeout=2) as response:
-            if response.status == 200:
-                data = json.loads(response.read().decode())
-                ollama_status = "connected"
-                available_models = [m.get("name") for m in data.get("models", [])]
-    except Exception:
-        ollama_status = "offline (Ollama not running on port 11434)"
-
-    return {
-        "status": "healthy",
-        "service": "Content Transformation Engine",
-        "ollama_status": ollama_status,
-        "available_models": available_models,
-        "default_model": DEFAULT_MODEL
-    }
-
+      from fastapi import Request
 
 @app.post("/api/transform", response_model=TransformResponse)
-async def transform_endpoint(
-    # Supports JSON Body
-    request_body: Optional[TransformRequest] = None,
-    # OR Supports File Upload + Form Fields
-    file: Optional[UploadFile] = File(None),
-    raw_text: Optional[str] = Form(None),
-    target_audience: str = Form("General Public"),
-    tone: str = Form("Professional"),
-    objective: str = Form("Inform"),
-    detail_level: str = Form("Standard"),
-    selected_formats: Optional[str] = Form(None)
-):
+async def transform_endpoint(request: Request):
     """
     Main transformation gateway.
-    Accepts direct JSON payload OR uploaded document file (PDF, DOCX, TXT).
+    Seamlessly accepts direct JSON payloads OR multipart file uploads (PDF/DOCX/TXT).
     """
-    # 1. Determine input text
+    content_type = request.headers.get("content-type", "")
     final_text = ""
+    target_audience = "General Public"
+    tone = "Professional"
+    objective = "Inform"
+    detail_level = "Standard"
     formats_list = ["linkedin", "twitter", "advisory", "executive_summary", "presentation", "video_package", "infographic"]
 
-    if request_body:
-        final_text = request_body.raw_text
-        target_audience = request_body.target_audience
-        tone = request_body.tone
-        objective = request_body.objective
-        detail_level = request_body.detail_level
-        formats_list = request_body.selected_formats
-    elif file:
-        file_bytes = await file.read()
-        final_text = extract_text_from_file(file_bytes, file.filename)
+    # 1. Handle JSON Request (from test_e2e.py or API clients)
+    if "application/json" in content_type:
+        try:
+            body = await request.json()
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid JSON format.")
+            
+        final_text = body.get("raw_text", "")
+        target_audience = body.get("target_audience", "General Public")
+        tone = body.get("tone", "Professional")
+        objective = body.get("objective", "Inform")
+        detail_level = body.get("detail_level", "Standard")
+        formats_list = body.get("selected_formats", formats_list)
+
+    # 2. Handle Multipart Form Upload (file upload from Frontend)
+    elif "multipart/form-data" in content_type:
+        form = await request.form()
+        file = form.get("file")
+        raw_text = form.get("raw_text", "")
+        target_audience = form.get("target_audience", "General Public")
+        tone = form.get("tone", "Professional")
+        objective = form.get("objective", "Inform")
+        detail_level = form.get("detail_level", "Standard")
+        selected_formats = form.get("selected_formats")
+
+        if file and hasattr(file, "read"):
+            file_bytes = await file.read()
+            final_text = extract_text_from_file(file_bytes, file.filename)
+        elif raw_text:
+            final_text = str(raw_text)
+
         if selected_formats:
             try:
                 formats_list = json.loads(selected_formats)
             except Exception:
-                formats_list = [f.strip() for f in selected_formats.split(",") if f.strip()]
+                formats_list = [f.strip() for f in str(selected_formats).split(",") if f.strip()]
+    else:
+        raise HTTPException(status_code=400, detail="Unsupported Content-Type. Send JSON or multipart/form-data.")
+
+    if not final_text.strip():
+        raise HTTPException(status_code=400, detail="No source content provided. Provide raw_text or upload a file.")
+
+    # 3. Build structured request object
+    structured_request = TransformRequest(
+        raw_text=final_text,
+        target_audience=target_audience,
+        tone=tone,
+        objective=objective,
+        detail_level=detail_level,
+        selected_formats=formats_list
+    )
+
+    # 4. Execute Transformation via Orchestrator
+    try:
+        response_data: TransformResponse = transform_content(structured_request)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Transformation error: {str(e)}")
+
+    # 5. If Presentation was requested and generated, build PPTX
+    if "presentation" in formats_list and response_data.presentation_deck:
+        record_id = str(uuid.uuid4())[:8]
+        filename = f"presentation_{record_id}.pptx"
+        output_path = str(EXPORT_DIR / filename)
+        generate_pptx_file(response_data.presentation_deck, output_path)
+
+    # 6. Save run into History Database
+    run_id = str(uuid.uuid4())
+    save_transformation(
+        record_id=run_id,
+        title=response_data.project_title,
+        raw_text=final_text[:500],
+        settings={"tone": tone, "audience": target_audience, "formats": formats_list},
+        result=response_data.model_dump()
+    )
+
+    return response_data
     elif raw_text:
         final_text = raw_text
         if selected_formats:
