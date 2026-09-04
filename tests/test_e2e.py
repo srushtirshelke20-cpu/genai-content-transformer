@@ -5,7 +5,7 @@ from pathlib import Path
 import requests
 
 # Set base URL
-BASE_URL = "http://localhost:8000"
+BASE_URL = "http://127.0.0.1:8000"
 ROOT_DIR = Path(__file__).resolve().parent.parent
 SAMPLE_FILE = ROOT_DIR / "data" / "samples" / "sample_1_cyber_threat.txt"
 
