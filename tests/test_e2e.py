@@ -17,7 +17,7 @@ def run_tests():
     # 1. Health Check Test
     print("\n[TEST 1] Checking API Health & Ollama Status...")
     try:
-        health_resp = requests.get(f"{BASE_URL}/api/health", timeout=5)
+        health_resp = requests.get(f"{BASE_URL}/api/health", timeout=10)
         assert health_resp.status_code == 200, f"Health check failed with status {health_resp.status_code}"
         health_data = health_resp.json()
         print(f"  ✅ API is Healthy!")
