@@ -92,7 +92,8 @@ def extract_text_from_file(file_bytes: bytes, filename: str) -> str:
             f"Unsupported file format: '{ext}'. Supported formats are: .pdf, .docx, .txt, .md"
         )
 
-    return clean_text(raw_text)
+    cleaned = clean_text(raw_text)
+return redact_pii(cleaned)
 
 
 
