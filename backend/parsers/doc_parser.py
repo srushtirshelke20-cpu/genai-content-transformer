@@ -25,7 +25,22 @@ def clean_text(text: str) -> str:
     # Trim redundant spaces and tabs within lines
     lines = [re.sub(r"[ \t]+", " ", line).strip() for line in text.split("\n")]
     return "\n".join(lines).strip()
-
+# ====================================================================
+# 🛡️ DPDP Act 2023 (Sec 7) Data Minimization / PII Redaction
+# ====================================================================
+def redact_pii(text: str) -> str:
+    """Auto-masks personal identifiers before LLM ingestion."""
+    # 1. Mask Indian Mobile Numbers (+91 or 10-digit)
+    text = re.sub(r'(?:\+91[\-\s]?)?[6-9]\d{9}\b', '[REDACTED_PHONE]', text)
+    # 2. Mask Email Addresses
+    text = re.sub(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', '[REDACTED_EMAIL]', text)
+    # 3. Mask Indian PAN Cards
+    text = re.sub(r'\b[A-Z]{5}[0-9]{4}[A-Z]{1}\b', '[REDACTED_PAN]', text)
+    # 4. Mask Indian Aadhaar Numbers
+    text = re.sub(r'\b\d{4}\s?\d{4}\s?\d{4}\b', '[REDACTED_AADHAAR]', text)
+    # 5. Mask IPv4 Addresses
+    text = re.sub(r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b', '[REDACTED_IP]', text)
+    return text
 
 def extract_text_from_file(file_bytes: bytes, filename: str) -> str:
     """
