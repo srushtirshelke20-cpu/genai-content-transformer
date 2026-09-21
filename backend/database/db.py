@@ -122,3 +122,36 @@ def fetch_history(
         history.append(row_dict)
 
     return history
+
+
+# ====================================================================
+# 🛡️ DPDP Act 2023 (Sec 12) Right to Erasure / Purge Functions
+# ====================================================================
+def delete_record(record_id: Union[str, int], db_path: str = DEFAULT_DB_PATH) -> bool:
+    """
+    DPDP Act 2023 (Sec 12) Right to Erasure.
+    Permanently wipes a specific transformation record by ID from history.
+    """
+    init_db(db_path)
+    conn = _get_connection(db_path)
+    with conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM records WHERE id = ?", (str(record_id),))
+        deleted = cursor.rowcount > 0
+    conn.close()
+    return deleted
+
+
+def purge_all_history(db_path: str = DEFAULT_DB_PATH) -> bool:
+    """
+    DPDP Act 2023 (Sec 12) Complete History Purge.
+    Permanently deletes all historical records from the database.
+    """
+    init_db(db_path)
+    conn = _get_connection(db_path)
+    with conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM records")
+    conn.close()
+    return True
+
