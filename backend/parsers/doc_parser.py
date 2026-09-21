@@ -25,21 +25,25 @@ def clean_text(text: str) -> str:
     # Trim redundant spaces and tabs within lines
     lines = [re.sub(r"[ \t]+", " ", line).strip() for line in text.split("\n")]
     return "\n".join(lines).strip()
-import re
 
+
+# ====================================================================
+# 🛡️ DPDP Act 2023 (Sec 7) Data Minimization / PII Redaction
+# ====================================================================
 def redact_pii(text: str) -> str:
-    """DPDP Act 2023 (Sec 7) Data Minimization Filter."""
-    # 1. Phone numbers (+91 or 10-digit)
+    """Auto-masks personal identifiers before LLM ingestion."""
+    # 1. Mask Indian Mobile Numbers (+91 or 10-digit)
     text = re.sub(r'(?:\+91[\-\s]?)?[6-9]\d{9}\b', '[REDACTED_PHONE]', text)
-    # 2. Emails
+    # 2. Mask Email Addresses
     text = re.sub(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', '[REDACTED_EMAIL]', text)
-    # 3. Indian PAN Cards
+    # 3. Mask Indian PAN Cards
     text = re.sub(r'\b[A-Z]{5}[0-9]{4}[A-Z]{1}\b', '[REDACTED_PAN]', text)
-    # 4. Indian Aadhaar Numbers
+    # 4. Mask Indian Aadhaar Numbers
     text = re.sub(r'\b\d{4}\s?\d{4}\s?\d{4}\b', '[REDACTED_AADHAAR]', text)
-    # 5. IPv4 Addresses
+    # 5. Mask IPv4 Addresses
     text = re.sub(r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b', '[REDACTED_IP]', text)
     return text
+
 
 def extract_text_from_file(file_bytes: bytes, filename: str) -> str:
     """
@@ -92,88 +96,6 @@ def extract_text_from_file(file_bytes: bytes, filename: str) -> str:
         )
 
     return redact_pii(clean_text(raw_text))
-
-
-
-
-
-
-
-
-# ==========================================
-# TEST BLOCK (Runs only when executing this file directly)
-# ==========================================
-if __name__ == "__main__":
-    import sys
-
-    # Ensure backend imports work
-    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    if project_root not in sys.path:
-        sys.path.insert(0, project_root)
-
-    from backend.exporters.pptx_exporter import generate_pptx_file
-    from backend.database.db import init_db, save_transformation, fetch_history
-    from backend.schemas import PresentationDeck, Slide
-
-    print("\n" + "=" * 60)
-    print("🚀 RUNNING VERIFICATION TEST")
-    print("=" * 60)
-
-    # 1. Test parsing sample_1_cyber_threat.txt
-    sample_file = os.path.join(project_root, "data", "samples", "sample_1_cyber_threat.txt")
-    print(f"\n[1/3] Reading: {sample_file}")
-
-    with open(sample_file, "rb") as f:
-        data_bytes = f.read()
-
-    extracted = extract_text_from_file(data_bytes, "sample_1_cyber_threat.txt")
-    print(f"  ✅ Extracted {len(extracted)} characters.")
-    print(f"  📝 Preview: {extracted[:100].strip()}...\n")
-
-    # 2. Test generating test_presentation.pptx
-    pptx_path = os.path.join(project_root, "test_presentation.pptx")
-    print(f"[2/3] Generating presentation: {pptx_path}")
-
-    mock_deck = PresentationDeck(
-        deck_title="Cyber Threat Analysis Brief",
-        target_audience="Security Operations Center",
-        slides=[
-            Slide(
-                slide_num=1,
-                title="Vulnerability Detection",
-                bullet_points=[
-                    "Unauthenticated remote code execution found in telemetry daemon.",
-                    "Apply Emergency Patch 2026-04 immediately."
-                ],
-                visual_diagram_concept="Network topology highlighting daemon node",
-                speaker_notes="Mandatory immediate patch window required."
-            )
-        ]
-    )
-
-    generate_pptx_file(mock_deck, pptx_path)
-    print(f"  ✅ Saved PPTX to: {pptx_path}\n")
-
-    # 3. Test storing record in SQLite
-    print("[3/3] Storing dummy record in SQLite database...")
-    init_db()
-    rec_id = save_transformation(
-        record_id="test-001",
-        title="Sample Cyber Threat Transformation",
-        raw_text=extracted[:100],
-        settings={"tone": "Urgent"},
-        result={"status": "Success"}
-    )
-    print(f"  ✅ Saved record with ID: {rec_id}")
-
-    history = fetch_history(limit=1)
-    print(f"  ✅ Verified record from database: '{history[0]['title']}'")
-
-    print("\n" + "=" * 60)
-    print("🎉 ALL TESTS PASSED SUCCESSFULLY WITHOUT CREATING NEW FILES!")
-    print("=" * 60 + "\n")
-
-
 
 
 # ==========================================
