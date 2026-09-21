@@ -19,13 +19,35 @@ COLOR_WHITE = RGBColor(255, 255, 255)
 COLOR_CARD_BG = RGBColor(241, 245, 249)     # Slate 100
 COLOR_CARD_BORDER = RGBColor(203, 213, 225) # Slate 300
 
+# Mandatory IT Act 2000 / IT Rules 2021 Rule 3(1)(b) Attribution Disclaimer
+AI_WATERMARK_TEXT = "🤖 AI-Synthesized Draft – Verify before use."
+
+
+def _add_slide_watermark(slide, is_dark_bg: bool = False):
+    """
+    IT Rules, 2021 (Rule 3(1)(b)) Compliance:
+    Adds a mandatory synthetic content disclaimer footer to each slide.
+    """
+    # 16:9 slide is 13.333" wide by 7.5" high. Footer placed at top = 7.05"
+    footer_box = slide.shapes.add_textbox(Inches(0.8), Inches(7.05), Inches(11.733), Inches(0.35))
+    tf = footer_box.text_frame
+    tf.word_wrap = True
+    tf.margin_left = tf.margin_right = tf.margin_top = tf.margin_bottom = 0
+
+    p = tf.paragraphs[0]
+    p.text = AI_WATERMARK_TEXT
+    p.font.size = Pt(10)
+    p.font.italic = True
+    p.font.color.rgb = COLOR_TEXT_MUTED
+    p.alignment = PP_ALIGN.RIGHT
+
 
 def generate_pptx_file(deck: PresentationDeck, output_path: str = "output.pptx") -> str:
     """
     Builds a 16:9 widescreen presentation using python-pptx.
     Includes a high-impact Title Slide, structured content slides with
-    bullet points and visual concept cards, and injects speaker notes.
-    Returns the absolute path to the saved .pptx file.
+    bullet points and visual concept cards, injects speaker notes,
+    and applies statutory AI attribution watermarks on every slide.
     """
     abs_output_path = os.path.abspath(output_path)
     output_dir = os.path.dirname(abs_output_path)
@@ -78,6 +100,9 @@ def generate_pptx_file(deck: PresentationDeck, output_path: str = "output.pptx")
     p_sub.font.color.rgb = COLOR_TEXT_MUTED
     p_sub.space_before = Pt(18)
     p_sub.alignment = PP_ALIGN.LEFT
+
+    # IT Mandate: Watermark on Title Slide
+    _add_slide_watermark(title_slide, is_dark_bg=True)
 
     # ----------------------------------------------------
     # 3. SUBSEQUENT CONTENT SLIDES
@@ -139,11 +164,14 @@ def generate_pptx_file(deck: PresentationDeck, output_path: str = "output.pptx")
             p_concept.font.color.rgb = COLOR_TEXT_DARK
             p_concept.space_before = Pt(10)
 
-        # CRITICAL: Attach speaker notes directly to the slide's notes frame
+        # Attach speaker notes
         if slide_data.speaker_notes:
             notes_slide = slide.notes_slide
             notes_text_frame = notes_slide.notes_text_frame
             notes_text_frame.text = slide_data.speaker_notes
+
+        # IT Mandate: Watermark on Content Slide
+        _add_slide_watermark(slide, is_dark_bg=False)
 
     # 4. Save and return absolute path
     prs.save(abs_output_path)
