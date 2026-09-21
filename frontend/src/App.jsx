@@ -44,7 +44,7 @@ export default function App() {
     // Live API Call to backend
     try {
       const payload = { raw_text: rawText, ...config };
-      const res = await fetch("http://localhost:8000/api/transform", {
+      const res = await fetch("http://127.0.0.1:8000/api/transform", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
