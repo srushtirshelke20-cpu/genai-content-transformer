@@ -70,13 +70,27 @@ except ImportError:
         return filepath
 
 try:
-    from backend.database.db import save_transformation, fetch_history
+    from backend.database.db import (
+        save_transformation,
+        fetch_history,
+        delete_record,
+        purge_all_history
+    )
 except ImportError:
     _mock_db = []
     def save_transformation(record_id, title, raw_text, settings, result):
         _mock_db.append({"id": record_id, "title": title, "result": result})
     def fetch_history(limit=10):
         return _mock_db[-limit:]
+    def delete_record(record_id):
+        global _mock_db
+        init_len = len(_mock_db)
+        _mock_db = [r for r in _mock_db if r.get("id") != str(record_id)]
+        return len(_mock_db) < init_len
+    def purge_all_history():
+        global _mock_db
+        _mock_db = []
+        return True
 
 # ====================================================================
 # FastAPI App Initialization
@@ -84,7 +98,7 @@ except ImportError:
 
 app = FastAPI(
     title="GenAI Platform for Automated Content Transformation",
-    description="Transforms raw documents/reports into 7 cross-platform communication artefacts.",
+    description="Transforms raw documents/reports into 7 cross-platform communication artefacts with DPDP 2023 compliance.",
     version="1.0.0"
 )
 
@@ -218,3 +232,35 @@ def download_pptx(filename: str):
 @app.get("/api/history")
 def get_history():
     return {"history": fetch_history(limit=10)}
+
+
+# ====================================================================
+# 🛡️ DPDP Act 2023 (Sec 12) Right to Erasure / Purge Endpoints
+# ====================================================================
+@app.delete("/api/history/{record_id}")
+def delete_history_item(record_id: str):
+    """
+    DPDP Act 2023 (Sec 12) Right to Erasure endpoint.
+    Permanently erases a specific transformation record by ID from history.
+    """
+    success = delete_record(record_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Record not found")
+    return {
+        "status": "success",
+        "message": "Record permanently erased per DPDP 2023 Sec 12",
+        "record_id": record_id
+    }
+
+
+@app.delete("/api/history")
+def purge_history():
+    """
+    DPDP Act 2023 (Sec 12) Complete History Purge endpoint.
+    Permanently deletes all historical records from the database on demand.
+    """
+    purge_all_history()
+    return {
+        "status": "success",
+        "message": "All records permanently purged per DPDP 2023 Sec 12"
+    }

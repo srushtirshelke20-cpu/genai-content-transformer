@@ -122,20 +122,53 @@ def fetch_history(limit: int = 10, db_path: str = DEFAULT_DB_PATH) -> List[Dict[
     records = []
     for row in rows:
         item = dict(row)
-        try:
-            item["settings"] = json.loads(item["settings"])
-        except Exception:
-            pass
-        try:
-            item["result"] = json.loads(item["result"])
-        except Exception:
-            pass
+        for col in ["settings", "result"]:
+            if item.get(col):
+                try:
+                    item[col] = json.loads(item[col])
+                except (json.JSONDecodeError, TypeError):
+                    pass
         records.append(item)
 
     conn.close()
     return records
 
 
+# ====================================================================
+# 🛡️ DPDP Act 2023 (Sec 12) Right to Erasure / Purge Functions
+# ====================================================================
+def delete_record(record_id: Union[str, int], db_path: str = DEFAULT_DB_PATH) -> bool:
+    """
+    DPDP Act 2023 (Sec 12) Right to Erasure.
+    Permanently wipes a specific transformation record by ID from history.
+    """
+    init_db(db_path)
+    conn = _get_connection(db_path)
+    with conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM records WHERE id = ?", (str(record_id),))
+        deleted = cursor.rowcount > 0
+    conn.close()
+    return deleted
+
+
+def purge_all_history(db_path: str = DEFAULT_DB_PATH) -> bool:
+    """
+    DPDP Act 2023 (Sec 12) Complete History Purge.
+    Permanently deletes all historical records from the database.
+    """
+    init_db(db_path)
+    conn = _get_connection(db_path)
+    with conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM records")
+    conn.close()
+    return True
+
+
+# ====================================================================
+# 🔍 Security Auditing Function
+# ====================================================================
 def verify_record_integrity(record_id: str, db_path: str = DEFAULT_DB_PATH) -> Dict[str, Any]:
     """
     Auditing utility:
