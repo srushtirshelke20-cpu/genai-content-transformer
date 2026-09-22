@@ -19,8 +19,15 @@ export function PresentationViewer({ deck }) {
             <h3 className="text-base font-bold text-slate-900">{deck.deck_title}</h3>
           </div>
         </div>
-        <button
-          onClick={() => alert("Downloading presentation (.PPTX)...")}
+                <button
+          onClick={() => {
+            const link = document.createElement('a');
+            link.href = '/presentation_cve-2026-8891.pptx';
+            link.setAttribute('download', 'presentation_cve-2026-8891.pptx');
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+          }}
           className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md bg-orange-600 text-white hover:bg-orange-700 transition"
         >
           <Download className="w-3.5 h-3.5" /> Download .PPTX
