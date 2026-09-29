@@ -1,3 +1,5 @@
+from pydantic import BaseModel
+from backend.database.db import verify_content, add_ledger_entry
 import sys
 import os
 import json
@@ -212,7 +214,13 @@ async def transform_endpoint(request: Request):
         settings={"tone": tone, "audience": target_audience, "formats": formats_list},
         result=response_data.model_dump()
     )
-
+    # 7. Append to Provenance Ledger (Blockchain Audit Trail)
+    add_ledger_entry(
+        source_text=final_text,
+        output_data=response_data.model_dump(),
+        parameters={"tone": tone, "audience": target_audience, "formats": formats_list},
+        operator="Security_Analyst_01"
+    )
     return response_data
 
 
@@ -264,3 +272,11 @@ def purge_history():
         "status": "success",
         "message": "All records permanently purged per DPDP 2023 Sec 12"
     }
+class VerifyPayload(BaseModel):
+    content: str
+
+
+@app.post("/api/verify")
+async def verify_endpoint(payload: VerifyPayload):
+    """Recomputes SHA-256 and checks against the provenance ledger."""
+    return verify_content(payload.content)
