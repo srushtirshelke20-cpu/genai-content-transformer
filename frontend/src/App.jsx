@@ -1,3 +1,28 @@
+ // =====================================================================
+// 1. ALL IMPORTS MUST BE AT THE VERY TOP (OUTSIDE function App)
+// =====================================================================
+import React, { useState } from 'react';
+import VerifyPage from './components/VerifyPage'; // 👈 IMPORTED HERE AT THE TOP!
+
+// (Keep any other existing imports you have below this, e.g.:)
+// import Header from './components/Header';
+// import AdvisoryViewer from './components/Viewers/AdvisoryViewer';
+
+const USE_MOCK = true; // or false if using live backend
+
+export default function App() {
+  // ===================================================================
+  // 2. STATE VARIABLES (INSIDE function App AT THE TOP)
+  // ===================================================================
+  const [activeTab, setActiveTab] = useState('transform'); // 'transform' or 'verify'
+  const [isLoading, setIsLoading] = useState(false);
+  const [rawText, setRawText] = useState('');
+  const [response, setResponse] = useState(null);
+  const [config, setConfig] = useState({ target_audience: 'Leadership', tone: 'Formal' });
+
+  // ===================================================================
+  // 3. YOUR EXACT HANDLETRANSFORM LOGIC (UNTOUCHED & FULLY PRESERVED)
+  // ===================================================================
   const handleTransform = async () => {
     setIsLoading(true);
 
@@ -215,3 +240,86 @@
       setIsLoading(false);
     }
   };
+
+  // ===================================================================
+  // 4. RETURN JSX WITH NAVIGATION BUTTONS & CONDITIONAL VIEW
+  // ===================================================================
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
+      
+      {/* --- TOP NAVBAR --- */}
+      <header className="border-b border-slate-800 bg-slate-900/80 px-6 py-4 flex items-center justify-between sticky top-0 z-50">
+        <div className="flex items-center gap-3">
+          <span className="text-2xl">⚡</span>
+          <div>
+            <h1 className="text-lg font-bold tracking-tight text-white">OmniTransform AI</h1>
+            <p className="text-xs text-slate-400">GenAI Content Transformer & Provenance Ledger</p>
+          </div>
+        </div>
+
+        {/* 👈 THE TWO NAVIGATION BUTTONS */}
+        <div className="flex items-center gap-2 bg-slate-950 p-1 rounded-xl border border-slate-800">
+          <button
+            onClick={() => setActiveTab('transform')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+              activeTab === 'transform'
+                ? 'bg-indigo-600 text-white shadow'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            🚀 Transformer
+          </button>
+          
+          <button
+            onClick={() => setActiveTab('verify')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+              activeTab === 'verify'
+                ? 'bg-indigo-600 text-white shadow'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            🛡️ Verify Authenticity
+          </button>
+        </div>
+      </header>
+
+      {/* --- MAIN BODY --- */}
+      <main className="flex-1 p-6 max-w-7xl mx-auto w-full">
+        {activeTab === 'verify' ? (
+          /* 👈 RENDER VERIFY PAGE WHEN TAB IS 'verify' */
+          <VerifyPage />
+        ) : (
+          /* 👈 YOUR EXISTING TRANSFORMER UI REMAINS HERE WHEN TAB IS 'transform' */
+          <div className="space-y-6">
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-6">
+              <h2 className="text-md font-semibold mb-2">Input Document</h2>
+              <textarea
+                rows={4}
+                value={rawText}
+                onChange={(e) => setRawText(e.target.value)}
+                placeholder="Paste policy document, CVE bulletin, or research abstract here..."
+                className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-sm text-slate-200 font-mono"
+              />
+              <button
+                onClick={handleTransform}
+                disabled={isLoading}
+                className="mt-3 px-5 py-2 bg-indigo-600 hover:bg-indigo-500 font-medium text-sm rounded-lg"
+              >
+                {isLoading ? "Transforming..." : "Synthesize 7 Deliverables"}
+              </button>
+            </div>
+
+            {/* Display your existing viewers / results here when response is available */}
+            {response && (
+              <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl">
+                <h3 className="font-bold text-emerald-400">{response.project_title}</h3>
+                <p className="text-xs text-slate-400 mt-1">Generated deliverables ready for review.</p>
+              </div>
+            )}
+          </div>
+        )}
+      </main>
+
+    </div>
+  );
+}
