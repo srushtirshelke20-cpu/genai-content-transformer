@@ -201,3 +201,97 @@ def verify_record_integrity(record_id: str, db_path: str = DEFAULT_DB_PATH) -> D
         "is_intact": is_intact,
         "audit_status": "VERIFIED_AUTHENTIC" if is_intact else "TAMPER_DETECTED"
     }
+
+# =====================================================================
+# PROVENANCE LEDGER & CRYPTOGRAPHIC CHAIN (SIH CYBERSECURITY)
+# =====================================================================
+
+def init_ledger():
+    """Initializes the cryptographic provenance ledger table."""
+    conn = _get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS provenance_ledger (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            block_index INTEGER NOT NULL,
+            timestamp TEXT NOT NULL,
+            source_hash TEXT NOT NULL,
+            output_hash TEXT NOT NULL,
+            parameters TEXT NOT NULL,
+            operator TEXT NOT NULL,
+            previous_hash TEXT NOT NULL,
+            block_hash TEXT NOT NULL
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+# Ensure table is created at startup
+init_ledger()
+
+def add_ledger_entry(source_text: str, output_data: Any, parameters: dict, operator: str = "Security_Analyst_01"):
+    """Appends an immutable block to the Provenance Ledger."""
+    conn = _get_connection()
+    cursor = conn.cursor()
+    
+    source_hash = generate_sha256_hash(source_text)
+    output_hash = generate_sha256_hash(output_data)
+    param_str = json.dumps(parameters, sort_keys=True)
+    timestamp = datetime.utcnow().isoformat() + "Z"
+    
+    cursor.execute("SELECT block_index, block_hash FROM provenance_ledger ORDER BY id DESC LIMIT 1")
+    last_block = cursor.fetchone()
+    
+    if last_block:
+        block_index = last_block["block_index"] + 1
+        previous_hash = last_block["block_hash"]
+    else:
+        block_index = 1
+        previous_hash = "0" * 64  # Genesis block
+        
+    block_payload = f"{block_index}|{timestamp}|{source_hash}|{output_hash}|{param_str}|{operator}|{previous_hash}"
+    block_hash = generate_sha256_hash(block_payload)
+    
+    cursor.execute("""
+        INSERT INTO provenance_ledger 
+        (block_index, timestamp, source_hash, output_hash, parameters, operator, previous_hash, block_hash)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, (block_index, timestamp, source_hash, output_hash, param_str, operator, previous_hash, block_hash))
+    
+    conn.commit()
+    conn.close()
+    return {"block_index": block_index, "block_hash": block_hash, "output_hash": output_hash}
+
+def verify_content(content_text: str):
+    """Verifies if input text matches any authentic output in the ledger."""
+    target_hash = generate_sha256_hash(content_text.strip())
+    conn = _get_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute("""
+        SELECT * FROM provenance_ledger 
+        WHERE output_hash = ? OR source_hash = ?
+        ORDER BY id DESC LIMIT 1
+    """, (target_hash, target_hash))
+    match = cursor.fetchone()
+    conn.close()
+    
+    if match:
+        return {
+            "status": "AUTHENTIC",
+            "is_authentic": True,
+            "computed_hash": target_hash,
+            "matched_block": {
+                "block_index": match["block_index"],
+                "timestamp": match["timestamp"],
+                "operator": match["operator"],
+                "parameters": json.loads(match["parameters"]),
+                "block_hash": match["block_hash"]
+            }
+        }
+    return {
+        "status": "TAMPERED",
+        "is_authentic": False,
+        "computed_hash": target_hash,
+        "matched_block": None
+    }
